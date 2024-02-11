@@ -1,0 +1,273 @@
+use std::{
+    borrow::Borrow,
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
+
+use super::{
+    ast::{
+        class::Class,
+        functions,
+        types::{JType, TypePath, TypeResolution},
+        Import, Imports, JPath,
+    },
+    parser::{self, ParseError},
+    tokenizer::UmlMeta,
+};
+
+#[derive(Default, Debug)]
+pub struct Files {
+    pub files: HashMap<PathBuf, String>,
+}
+
+impl Files {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn load_dir(&mut self, root: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let root = root.as_ref();
+        if std::fs::metadata(root)?.is_file() {
+            let file = std::fs::read_to_string(root)?;
+            self.files.insert(root.to_owned(), file);
+        } else {
+            for path in std::fs::read_dir(root)?.flatten() {
+                self.load_dir(path.path())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+pub struct PackagePath(pub JPath);
+
+impl Borrow<JPath> for ClassPath {
+    fn borrow(&self) -> &JPath {
+        &self.0
+    }
+}
+
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+pub struct ClassPath(pub JPath);
+
+#[derive(Debug, Default)]
+pub struct Project<'a> {
+    pub type_map: HashMap<ClassPath, Class<'a>>,
+    pub types: HashSet<ClassPath>,
+    pub imports: HashMap<ClassPath, Arc<Mutex<Imports>>>,
+    pub files: HashMap<ClassPath, &'a Path>,
+    pub packages: HashMap<PackagePath, Vec<ClassPath>>,
+    pub path_resolves: HashMap<JPath, Vec<ClassPath>>,
+}
+
+impl<'a> Project<'a> {
+    pub fn parse_all(files: &'a Files) -> Result<Project<'a>, (&'a Path, &'a str, ParseError<'a>)> {
+        let mut myself = Self::default();
+        for (path, contents) in &files.files {
+            let result = parser::Parser::new(contents).parse();
+            match result {
+                Ok(class) => {
+                    myself
+                        .imports
+                        .insert(ClassPath(class.class_path.clone()), class.imports.clone());
+                    myself.add_class(path, class)
+                }
+                Err(error) => return Err((path, contents, error)),
+            }
+        }
+        Ok(myself)
+    }
+
+    fn add_class(&mut self, path: &'a Path, mut class: Class<'a>) {
+        let mut inner_classes = Vec::new();
+        std::mem::swap(&mut inner_classes, &mut class.inner_classes);
+        for class in inner_classes {
+            self.add_class(path, class);
+        }
+        self.packages
+            .entry(PackagePath(class.package.clone().unwrap_or_default()))
+            .or_default()
+            .push(ClassPath(class.class_path.clone()));
+        self.files.insert(ClassPath(class.class_path.clone()), path);
+
+        let mut parent = class.class_path.clone();
+        parent.pop_part();
+
+        self.path_resolves
+            .entry(parent)
+            .or_default()
+            .push(ClassPath(class.class_path.clone()));
+
+        self.types.insert(ClassPath(class.class_path.clone()));
+        self.type_map
+            .insert(ClassPath(class.class_path.clone()), class);
+    }
+
+    pub fn resolve_imports(&mut self) {
+        for (path, import) in &mut self.imports {
+            let mut lock = import.lock().unwrap();
+            let Imports { name_map, wildcard } = &mut *lock;
+
+            let mut path = path.clone();
+            for import in self.path_resolves.get(&path.0).unwrap_or(&Vec::new()) {
+                if !name_map.contains_key(import.0.last()) {
+                    name_map.insert(
+                        import.0.last().to_owned(),
+                        Import {
+                            path: import.0.clone(),
+                            is_static: false,
+                        },
+                    );
+                }
+            }
+            path.0.pop_part();
+            for import in self.path_resolves.get(&path.0).unwrap_or(&Vec::new()) {
+                if !name_map.contains_key(import.0.last()) {
+                    name_map.insert(
+                        import.0.last().to_owned(),
+                        Import {
+                            path: import.0.clone(),
+                            is_static: false,
+                        },
+                    );
+                }
+            }
+
+            for mut import in wildcard.drain(..) {
+                import.path.pop_part();
+                for import in self.path_resolves.get(&import.path).unwrap_or(&Vec::new()) {
+                    if !name_map.contains_key(import.0.last()) {
+                        name_map.insert(
+                            import.0.last().to_owned(),
+                            Import {
+                                path: import.0.clone(),
+                                is_static: false,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn resolve_types(&mut self) {
+        let Self {
+            type_map, types, ..
+        } = self;
+
+        let prelude = Imports::new();
+        for class in type_map.values_mut() {
+
+            let class_imports = class.imports.clone();
+            let class_imports = class_imports.lock().unwrap();
+            let resolver = TypeResolve {
+                prelude: &prelude,
+                class_imports: &class_imports,
+                classes: types,
+                generics: class.generic_names.clone().unwrap_or_default(),
+            };
+            resolver.resolve_class(class);
+        }
+    }
+}
+
+struct TypeResolve<'a> {
+    prelude: &'a Imports,
+    class_imports: &'a Imports,
+    classes: &'a HashSet<ClassPath>,
+    generics: Arc<HashSet<String>>,
+}
+
+impl<'a> TypeResolve<'a> {
+    pub fn resolve(&self, jtype: &mut TypePath) {
+        if self.classes.contains(&jtype.origional) {
+            jtype.resolved = TypeResolution::Some(jtype.origional.clone());
+        } else {
+            let start = jtype.origional.first();
+            if let Some(resolved) = self.class_imports.name_map.get(start) {
+                jtype.resolved = TypeResolution::Some(resolved.path.clone());
+            } else if let Some(resolved) = self.prelude.name_map.get(start) {
+                jtype.resolved = TypeResolution::Some(resolved.path.clone());
+            } else if self.generics.contains(&jtype.origional.path){
+                jtype.resolved = TypeResolution::Generic;
+            }
+        }
+    }
+
+    fn resolve_type(&self, jtype: &mut JType) {
+        match jtype {
+            JType::Primitive(_) => {}
+            JType::PrimitiveArr(_, _) => {}
+            JType::Object { path, generics, .. } => {
+                self.resolve(path);
+                if let Some(generics) = generics {
+                    for invoction in &mut generics.invoctions {
+                        match invoction {
+                            super::ast::generics::GenericInvoctionPart::Type(jtype) => {
+                                self.resolve_type(jtype)
+                            }
+                            super::ast::generics::GenericInvoctionPart::Wildcard(wildcard) => {
+                                match wildcard {
+                                    super::ast::generics::WildcardBound::None => todo!(),
+                                    super::ast::generics::WildcardBound::Extends(list)
+                                    | super::ast::generics::WildcardBound::Super(list) => {
+                                        for jtype in list {
+                                            self.resolve_type(jtype);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve_class(&self, class: &mut Class<'_>) {
+        self.resolve_meta(&mut class.meta);
+        for extends in class.extends.as_mut().unwrap_or(&mut Vec::new()) {
+            self.resolve_type(extends);
+        }
+        for implements in class.implements.as_mut().unwrap_or(&mut Vec::new()) {
+            self.resolve_type(implements);
+        }
+        for permits in class.permits.as_mut().unwrap_or(&mut Vec::new()) {
+            self.resolve_type(permits);
+        }
+
+        for variables in &mut class.variables {
+            self.resolve_meta(&mut variables.meta);
+            self.resolve_type(&mut variables.jtype);
+        }
+
+        for functions in &mut class.functions {
+            self.resolve_meta(&mut functions.meta);
+            if let Some(generics) = &mut functions.generics {
+                for definition in &mut generics.definitions {
+                    if let Some(bounds) = &mut definition.extend_bound {
+                        for bound in bounds {
+                            self.resolve_type(bound);
+                        }
+                    }
+                }
+            }
+            for param in &mut functions.parameters {
+                match param {
+                    functions::Parameter::Regular(jtype, _)
+                    | functions::Parameter::VArgs(jtype, _) => {
+                        self.resolve_type(jtype);
+                    }
+                }
+            }
+
+            if let functions::FunctionKind::Regular(jtype) = &mut functions.kind {
+                self.resolve_type(jtype);
+            }
+        }
+    }
+
+    fn resolve_meta(&self, _meta: &mut [UmlMeta]) {}
+}
