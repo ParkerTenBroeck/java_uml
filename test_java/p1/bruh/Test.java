@@ -7,9 +7,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import nodes.*;
 
-//import java.util.*;
-//import java.awt.*;
-
 public class Test<T extends Object> implements Function {
     public static int RED;
     public static <T extends Object & Consumer> void test2(List<? super Object> list) {

@@ -129,9 +129,9 @@ fn test() {
         }
     }
 }
-pub fn test_project() {
-    // use std::io::Write;
 
+
+pub fn test_project() {
     let mut files = project::Files::new();
     files
         .load_dir("./test_java/p1")
@@ -142,5 +142,4 @@ pub fn test_project() {
     project.resolve_imports();
     project.resolve_types();
     println!("{:#?}", project);
-    std::thread::sleep(std::time::Duration::from_millis(1000));
 }
