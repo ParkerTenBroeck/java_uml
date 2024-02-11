@@ -134,7 +134,7 @@ pub fn test_project() {
 
     let mut files = project::Files::new();
     files
-        .load_dir("/home/may/Documents/GitHub/COSC_term2/COSC_2P03/sandbox/src")
+        .load_dir("./test_java/p1")
         .unwrap();
 
     let mut project = project::Project::parse_all(&files).unwrap();

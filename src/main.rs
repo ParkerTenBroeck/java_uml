@@ -1,5 +1,5 @@
 pub mod java;
 
 fn main() {
-    println!("Hello, world!");
+    java::test_project();
 }
