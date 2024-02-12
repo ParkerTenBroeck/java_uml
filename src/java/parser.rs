@@ -7,14 +7,9 @@ use crate::java::ast::{
 
 use super::{
     ast::{
-        class::{Class, ClassType},
-        functions::{Function, FunctionKind, Parameter},
-        generics::{GenericDefinition, GenericDefinitionPart, GenericInvoctionPart, WildcardBound},
-        types::JType,
-        variable::Variable,
-        Annotations, Import, Imports, JPath, Modifiers, Visibility,
+        class::{Class, ClassType}, functions::{Function, FunctionKind, Parameter}, generics::{GenericDefinition, GenericDefinitionPart, GenericInvoctionPart, WildcardBound}, types::JType, variable::Variable, Annotations, Import, Imports, JPath, Metadata, Modifiers, Visibility
     },
-    tokenizer::{Peek2, Peek2able, Token, Tokenizer, UmlMeta},
+    tokenizer::{Peek2, Peek2able, Token, Tokenizer},
 };
 
 #[derive(Debug, Clone)]
@@ -157,9 +152,9 @@ impl<'a> Parser<'a> {
 
     pub fn parse_stuff(
         &mut self,
-    ) -> Result<(Vec<UmlMeta<'a>>, Annotations, Visibility, Modifiers), ParseError<'a>> {
+    ) -> Result<(Metadata<'a>, Annotations, Visibility, Modifiers), ParseError<'a>> {
         let mut annotations = Annotations::new();
-        let mut metas = Vec::new();
+        let mut metas = Metadata::new();
 
         loop {
             match self.tokenizer.peek() {
@@ -288,7 +283,7 @@ impl<'a> Parser<'a> {
         mut class_path_prefix: JPath,
         mut generic_names: Option<Arc<HashSet<String>>>,
         imports: std::sync::Arc<std::sync::Mutex<Imports>>,
-        meta: Vec<UmlMeta<'a>>,
+        meta: Metadata<'a>,
         annotations: Annotations,
         visibility: Visibility,
         mut modifiers: Modifiers,

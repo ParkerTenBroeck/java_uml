@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use bitfield_struct::bitfield;
 
+use super::tokenizer::UmlMeta;
+
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 pub struct JPath {
     pub path: String,
@@ -121,6 +123,25 @@ impl std::fmt::Debug for Modifiers {
 }
 
 #[derive(Debug, Default, Clone)]
+pub struct Metadata<'a>{
+    pub hidden: bool,
+    pub other: Vec<UmlMeta<'a>>
+}
+
+impl<'a> Metadata<'a>{
+    pub fn new() -> Self{
+        Self::default()
+    }
+
+    pub fn push(&mut self, meta: UmlMeta<'a>){
+        match meta{
+            UmlMeta::Hide => self.hidden = true,
+            other => self.push(other),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct Imports {
     pub name_map: HashMap<String, Import>,
     pub wildcard: Vec<Import>,
@@ -165,11 +186,8 @@ impl Annotations {
 pub mod class {
     use std::{collections::HashSet, sync::{Arc, Mutex}};
 
-    use crate::java::tokenizer::UmlMeta;
-
     use super::{
-        functions::Function, generics::GenericDefinition, types::JType, variable::Variable,
-        Annotations, Imports, JPath, Modifiers, Visibility,
+        functions::Function, generics::GenericDefinition, types::JType, variable::Variable, Annotations, Imports, JPath, Metadata, Modifiers, Visibility
     };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,7 +202,7 @@ pub mod class {
     pub struct Class<'a> {
         pub package: Option<JPath>,
         pub imports: Arc<Mutex<Imports>>,
-        pub meta: Vec<UmlMeta<'a>>,
+        pub meta: Metadata<'a>,
         pub annotations: Annotations,
         pub visibility: Visibility,
         pub modifiers: Modifiers,
@@ -204,13 +222,12 @@ pub mod class {
 }
 
 pub mod variable {
-    use crate::java::tokenizer::UmlMeta;
 
-    use super::{types::JType, Annotations, Modifiers, Visibility};
+    use super::{types::JType, Annotations, Metadata, Modifiers, Visibility};
 
     #[derive(Debug, Clone)]
     pub struct Variable<'a> {
-        pub meta: Vec<UmlMeta<'a>>,
+        pub meta: Metadata<'a>,
         pub annotations: Annotations,
         pub visibility: Visibility,
         pub modifiers: Modifiers,
@@ -220,9 +237,8 @@ pub mod variable {
 }
 
 pub mod functions {
-    use crate::java::tokenizer::UmlMeta;
 
-    use super::{generics::GenericDefinition, types::JType, Annotations, Modifiers, Visibility};
+    use super::{generics::GenericDefinition, types::JType, Annotations, Metadata, Modifiers, Visibility};
 
     #[derive(Debug, Clone)]
     pub enum FunctionKind {
@@ -233,7 +249,7 @@ pub mod functions {
 
     #[derive(Debug, Clone)]
     pub struct Function<'a> {
-        pub meta: Vec<UmlMeta<'a>>,
+        pub meta: Metadata<'a>,
         pub annotations: Annotations,
         pub visibility: Visibility,
         pub modifiers: Modifiers,

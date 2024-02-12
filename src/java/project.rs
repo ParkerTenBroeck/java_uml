@@ -10,10 +10,9 @@ use super::{
         class::Class,
         functions,
         types::{JType, TypePath, TypeResolution},
-        Import, Imports, JPath,
+        Import, Imports, JPath, Metadata,
     },
     parser::{self, ParseError},
-    tokenizer::UmlMeta,
 };
 
 #[derive(Default, Debug)]
@@ -171,6 +170,7 @@ impl<'a> Project<'a> {
             resolver.resolve_class(class);
         }
     }
+
 }
 
 struct TypeResolve<'a> {
@@ -226,7 +226,7 @@ impl<'a> TypeResolve<'a> {
         }
     }
 
-    fn resolve_class(&self, class: &mut Class<'_>) {
+    fn resolve_class(&self, class: &mut Class) {
         self.resolve_meta(&mut class.meta);
         for extends in class.extends.as_mut().unwrap_or(&mut Vec::new()) {
             self.resolve_type(extends);
@@ -269,5 +269,39 @@ impl<'a> TypeResolve<'a> {
         }
     }
 
-    fn resolve_meta(&self, _meta: &mut [UmlMeta]) {}
+    fn resolve_meta(&self, _meta: &mut Metadata) {}
+}
+
+// ----------------------- Visitor stuff
+
+impl<'a> Project<'a>{
+    pub fn visit<T: Visitor>(visitor: &mut T) -> Result<T::Ok, T::Err>{
+        visitor.visit_start()?;
+
+
+
+        visitor.visit_end()
+    }
+}
+
+pub trait Visitor{
+    type Ok;
+    type Err;
+
+    fn visit_start(&mut self) -> Result<(), Self::Err>;
+
+    fn visit_pre_meta(&mut self) -> Result<(), Self::Err>;
+
+    fn visit_package_start(&mut self, package: &JPath) -> Result<(), Self::Err>;
+    fn visit_pre_class_meta(&mut self) -> Result<(), Self::Err>;
+
+    fn visit_class(&mut self, class: &Class) -> Result<(), Self::Err>;
+    
+    fn visit_post_class_meta(&mut self) -> Result<(), Self::Err>;
+    fn visit_package_end(&mut self, package: &JPath) -> Result<(), Self::Err>;
+
+    fn visit_post_meta(&mut self) -> Result<(), Self::Err>;
+
+    fn visit_end(&mut self) -> Result<Self::Ok, Self::Err>;
+
 }
