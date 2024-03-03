@@ -14,10 +14,10 @@ fn main() {
         Ok(ok) => ok,
         Err((p, str, err)) => {
             let range = match &err{
-                java_uml::java::parser::ParseError::UnexpectedToken { token, range } => range.clone(),
+                java_uml::java::parser::ParseError::UnexpectedToken { range, .. } => range.clone(),
                 java_uml::java::parser::ParseError::ExpectedFoundNone => todo!(),
-                java_uml::java::parser::ParseError::ExpectedToken { expected, got, range } => range.clone(),
-                java_uml::java::parser::ParseError::ExpectedTokenFoundNone { expected } => todo!(),
+                java_uml::java::parser::ParseError::ExpectedToken { range, .. } => range.clone(),
+                java_uml::java::parser::ParseError::ExpectedTokenFoundNone { .. } => todo!(),
             };
 
             let line_start = str[..range.start].rfind('\n').map(|v|v+1).unwrap_or(0);
