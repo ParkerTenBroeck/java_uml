@@ -1,5 +1,5 @@
 use crate::java::{
-    ast::{class::{Class, ClassType}, functions::{self, Function, FunctionKind}, generics::{GenericInvoctionPart, WildcardBound}, types::{JType, Primitive}, variable::Variable, Visibility},
+    ast::{class::{Class, ClassType}, functions::{self, Function, FunctionKind}, generics::{GenericInvoctionPart, WildcardBound}, types::{JType, Primitive, TypePath, TypeResolution}, variable::Variable, JPath, Visibility},
     project::Project,
 };
 
@@ -30,7 +30,55 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
             self.write_class(class)?;
         }
 
+
+
         self.out.write_all("@enduml".as_bytes())
+    }
+
+    fn write_full_class_path(&mut self, class_path: &JPath, package: &Option<JPath>) -> Result{
+        let remainder = if let Some(package) = package{
+            for part in package.path.split('.'){
+                self.out.write_all(part.as_bytes())?;
+                self.out.write_all("::".as_bytes())?;    
+            }
+            class_path.path.trim_start_matches(&package.path)
+        }else{
+            class_path.path.as_str()
+        };
+        { 
+            let mut peek = remainder.split('.').peekable();
+            while let Some(part) = peek.next(){
+                if part.is_empty(){
+                    continue;
+                }
+                self.out.write_all(part.as_bytes())?;
+                if peek.peek().is_some() {
+                    self.out.write_all(".".as_bytes())?; 
+                }   
+            }
+        }
+        Ok(())
+    }
+
+    fn write_class_type_name(&mut self, jtype: &TypePath) -> Result{
+        match &jtype.resolved{
+            TypeResolution::Some(full_path) => {
+                if let Some(some) = self.java.type_map.get(full_path){
+                    let str = if let Some(package) = &some.package{
+                        jtype.origional.path.trim_end_matches(&package.path)
+                    }else{
+                        &jtype.origional.path
+                    };
+                    self.out.write_all(str.as_bytes())
+                }else{
+                    self.out.write_all(jtype.origional.path.as_bytes())
+                }
+            },
+            TypeResolution::None |
+            TypeResolution::Generic => {
+                self.out.write_all(jtype.origional.path.as_bytes())
+            },
+        }
     }
 
     fn write_class(&mut self, class: &Class) -> Result {
@@ -48,27 +96,8 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
         self.out.write_all(kind.as_bytes())?;
         self.out.write_all(" ".as_bytes())?;   
 
-        let remainder = if let Some(package) = &class.package{
-            for part in package.path.split('.'){
-                self.out.write_all(part.as_bytes())?;
-                self.out.write_all("::".as_bytes())?;    
-            }
-            class.class_path.path.trim_start_matches(&package.path)
-        }else{
-            class.class_path.path.as_str()
-        };
-        { 
-            let mut peek = remainder.split('.').peekable();
-            while let Some(part) = peek.next(){
-                if part.is_empty(){
-                    continue;
-                }
-                self.out.write_all(part.as_bytes())?;
-                if peek.peek().is_some() {
-                    self.out.write_all(".".as_bytes())?; 
-                }   
-            }
-        }
+        self.write_full_class_path(&class.class_path, &class.package)?;
+
         self.out.write_all(" ".as_bytes())?;    
         if let ClassType::Record = class.class_type{
             self.out.write_all("<<record>>".as_bytes())?;
@@ -220,7 +249,7 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
             },
             JType::Object { path, generics, arr } => {
 
-                self.out.write_all(path.origional.last().as_bytes())?;
+                self.write_class_type_name(path)?;
                 if let Some(gen) = generics{
                     self.out.write_all("<".as_bytes())?;
                     for (index, inv) in gen.invoctions.iter().enumerate(){
