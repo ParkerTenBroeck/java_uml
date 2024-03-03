@@ -9,6 +9,10 @@ import java.util.LinkedList;
 
 public class Main {
 
+    int[] intArr;
+    int[] intArr2[];
+    int intArr3[][];
+
     public static void main(String... args) throws Exception {
 
 

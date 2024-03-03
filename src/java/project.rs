@@ -61,9 +61,109 @@ pub struct Project<'a> {
     pub path_resolves: HashMap<JPath, Vec<ClassPath>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ParseFileError<'a>{
+    pub path: &'a Path,
+    pub contents: &'a str,
+    pub error: ParseError<'a>,
+}
+
+const BOLD: &str = "\x1b[1m";
+const RED: &str = "\x1b[31m";
+// const YELLOW: &str = "\x1b[33m";
+const BLUE: &str = "\x1b[34m";
+// const GREEN: &str = "\x1b[32m";
+const RESET: &str = "\x1b[0;22m";
+
+
+
+impl<'a> std::fmt::Display for ParseFileError<'a>{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}: ")?;
+        match self.error.kind{
+            parser::ParseErrorKind::UnexpectedToken { message, got } => writeln!(f, "unexpected token {got:?} {message}")?,
+            parser::ParseErrorKind::ExpectedToken { expected, got } =>  writeln!(f, "expected {expected} got {got:?}")?,
+            parser::ParseErrorKind::ExpectedTokenFoundNone { expected } => writeln!(f, "expected {expected} got EOF")?,
+            parser::ParseErrorKind::ArrayDegreeTooBig => writeln!(f, "array degree too big")?,
+        }
+
+        let (line, col, line_contents, adj_range) = if let Some(range) = &self.error.range{
+            let line_start = self.contents[..range.start].rfind('\n').map(|v|v+1).unwrap_or(0);
+            let line_end = self.contents[range.end..].find('\n').map(|v|v+range.end-1).unwrap_or(self.contents.len());
+            let col = range.start - line_start;
+            let lines = self.contents[..range.start].chars().filter(|v|*v=='\n').count()+1;
+            let msg = &self.contents[line_start..=line_end];
+            (lines, col, msg, (range.start-line_start)..(range.start-line_start + range.end-range.start))
+        }else{
+            let lines = self.contents.chars().filter(|v|*v=='\n').count()+1;
+            let line_start = self.contents.rfind('\n').map(|v|v+1).unwrap_or(0);
+            let col = self.contents.len() - line_start;
+            let msg = &self.contents[line_start..];
+            (lines, col, msg, 0..0)
+        };
+
+        // this is funny
+        let space = "                                                                                                                                                                                                                                                                ";
+        
+        let space = &space[0..((line as f32).log10().floor() as u8) as usize + 1];
+
+        writeln!(
+            f,
+            "{BLUE}{BOLD}{space}--> {RESET}{}:{}:{}",
+            self.path.display(),
+            line,
+            col
+        )?;
+        writeln!(f, "{BLUE}{BOLD}{space} |")?;
+        if self.error.range.is_some(){
+            let mut index = 0;
+            for (i, line_contents) in line_contents.split('\n').enumerate(){ 
+                writeln!(
+                    f,
+                    "{} |{RESET} {}",
+                    line + i,
+                    &line_contents
+                )?;
+                write!(f, "{BLUE}{BOLD}{space} | ")?;
+                for c in line_contents.chars(){
+                    if adj_range.contains(&index){
+                        write!(f, "~")?;
+                    }else{
+                        write!(f, " ")?;
+                    }
+                    index += c.len_utf8();
+                }
+                //nl
+                if adj_range.contains(&index){
+                    write!(f, "~")?;
+                }else{
+                    write!(f, " ")?;
+                }
+                index += 1;
+                writeln!(f)?;
+            }
+            write!(f, "{RESET}")
+        }else{
+            writeln!(
+                f,
+                "{} |{RESET} {}",
+                line,
+                &line_contents
+            )?;
+            
+            write!(f, "{BLUE}{BOLD}{space} | ")?;
+            for _ in line_contents.chars(){
+                write!(f, " ")?;
+            }
+            writeln!(f, "~{RESET}")
+        }
+    }
+}
+
 impl<'a> Project<'a> {
-    pub fn parse_all(files: &'a Files) -> Result<Project<'a>, (&'a Path, &'a str, ParseError<'a>)> {
+    pub fn parse_all(files: &'a Files) -> Result<Project<'a>, Vec<ParseFileError<'a>>> {
         let mut myself = Self::default();
+        let mut vec = Vec::new();
         for (path, contents) in &files.files {
             let result = parser::Parser::new(contents).parse();
             match result {
@@ -73,10 +173,14 @@ impl<'a> Project<'a> {
                         .insert(ClassPath(class.class_path.clone()), class.imports.clone());
                     myself.add_class(path, class)
                 }
-                Err(error) => return Err((path, contents, error)),
+                Err(error) => vec.push(ParseFileError{path, contents, error}),
             }
         }
-        Ok(myself)
+        if vec.is_empty(){
+            Ok(myself)
+        }else{
+            Err(vec)
+        }
     }
 
     fn add_class(&mut self, path: &'a Path, mut class: Class<'a>) {

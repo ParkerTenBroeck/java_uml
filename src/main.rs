@@ -12,21 +12,11 @@ fn main() {
 
     let mut project = match project::Project::parse_all(&files){
         Ok(ok) => ok,
-        Err((p, str, err)) => {
-            let range = match &err{
-                java_uml::java::parser::ParseError::UnexpectedToken { range, .. } => range.clone(),
-                java_uml::java::parser::ParseError::ExpectedFoundNone => todo!(),
-                java_uml::java::parser::ParseError::ExpectedToken { range, .. } => range.clone(),
-                java_uml::java::parser::ParseError::ExpectedTokenFoundNone { .. } => todo!(),
-            };
-
-            let line_start = str[..range.start].rfind('\n').map(|v|v+1).unwrap_or(0);
-            let line_end = str[range.end..].find('\n').map(|v|v-1+range.end).unwrap_or(str.len());
-            let col = range.start - line_start;
-            let lines = str[..range.start].chars().filter(|v|*v=='\n').count();
-            let msg = &str[line_start..=line_end];
-
-            panic!("file: {p:?}:{lines}{col}\n{line_start}: {msg}");
+        Err(errs) => {
+            for err in errs{
+                println!("{err}");
+            }
+            return;
         },
     };
 
@@ -37,5 +27,4 @@ fn main() {
     PlantUmlGen::new(&mut writter, &project)
         .write()
         .expect("Failed to create UML");
-    println!("{:#?}", project);
 }
