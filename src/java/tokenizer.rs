@@ -50,6 +50,7 @@ pub enum Token<'a> {
     QuestionMark,
     Dot,
     DotDotDot,
+    Equals,
 
     Extends,
     Super,
@@ -145,6 +146,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             ">" => Token::RAngle,
             "\\[" => Token::LBracket,
             "\\]" => Token::RBracket,
+            "=" => Token::Equals,
 
 
             r#"[a-zA-Z_][a-zA-Z0-9_]*"# => Token::Ident(text),

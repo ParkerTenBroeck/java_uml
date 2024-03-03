@@ -492,13 +492,19 @@ impl<'a> Parser<'a> {
                             };
 
                             let jtype = self.append_c_style_arr(jtype)?;
-                            
-                            loop {
-                                match self.tokenizer.next() {
-                                    Some((Token::Semicolon, _)) => break,
-                                    Some(_) => {}
-                                    None => return expected_token_eof("Semicolon"),
-                                }
+
+                            match self.tokenizer.peek(){
+                                Some((Token::Semicolon, _)) => _ = self.tokenizer.next(),
+                                Some((Token::Equals, _)) => {
+                                    self.tokenizer.next();
+                                    match self.tokenizer.next() {
+                                        Some((Token::Semicolon, _)) => break,
+                                        Some(_) => {}
+                                        None => return expected_token_eof("Semicolon"),
+                                    }
+                                },
+                                Some((got, range)) => return expected_token("Semicolon|Equals", *got, range.clone()),
+                                None => return expected_token_eof("Semicolon|Equals"),
                             }
                             variables.push(Variable {
                                 meta,
