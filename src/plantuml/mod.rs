@@ -1,5 +1,5 @@
 use crate::java::{
-    ast::{class::{Class, ClassType}, functions::Function, generics::{GenericInvoctionPart, WildcardBound}, types::{JType, Primitive}, variable::Variable, Visibility},
+    ast::{class::{Class, ClassType}, functions::{self, Function, FunctionKind}, generics::{GenericInvoctionPart, WildcardBound}, types::{JType, Primitive}, variable::Variable, Visibility},
     project::Project,
 };
 
@@ -16,24 +16,21 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
     }
 
     pub fn write(&mut self) -> Result {
-        writeln!(
-            self.out,
-            "@startuml
-skinparam fixCircleLabelOverlapping true 
-skinparam nodesep 100
-skinparam ranksep 100
-'skinparam linetype ortho
-'skinparam linetype polyline
-!pragma layout elk      
-set separator ::      
-            "
-        )?;
+        self.out.write_all("@startuml
+        skinparam fixCircleLabelOverlapping true 
+        skinparam nodesep 100
+        skinparam ranksep 100
+        'skinparam linetype ortho
+        'skinparam linetype polyline
+        !pragma layout elk      
+        set separator ::      
+                    ".as_bytes())?;
 
         for class in self.java.type_map.values() {
             self.write_class(class)?;
         }
 
-        Ok(())
+        self.out.write_all("@enduml".as_bytes())
     }
 
     fn write_class(&mut self, class: &Class) -> Result {
@@ -136,7 +133,79 @@ set separator ::
     }
     
     fn visit_function(&mut self, function: &Function) -> Result {
-        Ok(())
+        self.out.write_all("  ".as_bytes())?;
+
+        if function.modifiers.m_static() {
+            self.out.write_all("{static} ".as_bytes())?;
+        }
+        if function.modifiers.m_abstract() {
+            self.out.write_all("{abstract} ".as_bytes())?;
+        }
+
+        self.write_visibility(function.visibility)?;
+
+        if function.modifiers.m_final() {
+            self.out.write_all("final ".as_bytes())?;
+        }
+        if function.modifiers.m_default() {
+            self.out.write_all("default ".as_bytes())?;
+        }
+
+        self.out.write_all(function.name.as_bytes())?;
+
+        if let Some(generics) = &function.generics{
+            self.out.write_all(" <".as_bytes())?;
+            for (index, gen) in generics.definitions.iter().enumerate(){
+                
+                self.out.write_all(gen.name.as_bytes())?;
+
+                if let Some(bounds) = &gen.extend_bound{
+                    self.out.write_all(" extends ".as_bytes())?;
+                    self.write_type_list(bounds)?;
+                }
+                if index != generics.definitions.len() - 1{
+                    self.out.write_all(", ".as_bytes())?;
+                }
+            }
+            self.out.write_all("> ".as_bytes())?;
+
+        }
+
+        self.out.write_all("(".as_bytes())?;
+        for (index, param) in function.parameters.iter().enumerate(){
+            match param{
+                functions::Parameter::Regular(jtype, name) => {
+                    self.visit_type(jtype)?;
+                    self.out.write_all(" ".as_bytes())?;
+                    self.out.write_all(name.as_bytes())?;
+                },
+                functions::Parameter::VArgs(jtype, name) => {
+                    self.visit_type(jtype)?;
+                    self.out.write_all("... ".as_bytes())?;
+                    self.out.write_all(name.as_bytes())?;
+
+                },
+            }
+            if index != function.parameters.len() - 1{
+                self.out.write_all(", ".as_bytes())?;
+            }
+        }
+        self.out.write_all(")".as_bytes())?;
+
+        match &function.kind{
+            FunctionKind::Regular(ret) => {
+                self.out.write_all(": ".as_bytes())?;
+                self.visit_type(ret)?;
+            },
+            FunctionKind::Constructor
+            | FunctionKind::CompactConstructor => {},
+        }
+
+        if let Some(throws) = &function.throws{
+            self.out.write_all(" throws ".as_bytes())?;
+            self.write_type_list(throws)?;
+        }
+        self.out.write_all("\n".as_bytes())
     }
 
     fn visit_type(&mut self, jtype: &JType) -> Result{
@@ -173,12 +242,7 @@ set separator ::
                                     WildcardBound::None => {},
                                     WildcardBound::Extends(types) 
                                     | WildcardBound::Super(types) => {
-                                        for (index, jtype) in types.iter().enumerate(){
-                                            self.visit_type(jtype)?;
-                                            if index != types.len() - 1{
-                                                self.out.write_all(", ".as_bytes())?;
-                                            }
-                                        }
+                                        self.write_type_list(types)?;
                                     },
                                 }
                             },
@@ -196,6 +260,16 @@ set separator ::
                 Ok(())
             },
         }
+    }
+
+    fn write_type_list(&mut self, list: &[JType]) -> Result{
+        for (index, jtype) in list.iter().enumerate(){
+            self.visit_type(jtype)?;
+            if index != list.len() - 1{
+                self.out.write_all(", ".as_bytes())?;
+            }
+        }
+        Ok(())
     }
 
     fn write_primitive(&mut self, prim: &Primitive) -> Result{

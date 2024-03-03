@@ -263,6 +263,12 @@ impl<'a> TypeResolve<'a> {
                 }
             }
 
+            if let Some(throws) = &mut functions.throws{
+                for throw in throws{
+                    self.resolve_type(throw);
+                }
+            }
+
             if let functions::FunctionKind::Regular(jtype) = &mut functions.kind {
                 self.resolve_type(jtype);
             }
