@@ -369,16 +369,19 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Some((Token::Semicolon, _)) => break,
+                    Some((Token::RBrace, _)) => break,
 
                     Some((token, range)) => Err(ParseError::UnexpectedToken { token, range })?,
                     None => Err(ParseError::ExpectedFoundNone)?,
                 }
-
-                match self.tokenizer.next() {
-                    Some((Token::Comma, _)) => {}
-                    Some((Token::Semicolon, _)) => break,
-                    Some((token, range)) => Err(ParseError::UnexpectedToken { token, range })?,
-                    None => Err(ParseError::ExpectedFoundNone)?,
+                
+                if !matches!(self.tokenizer.peek(), Some((Token::RBrace, _))) {
+                    match self.tokenizer.next() {
+                        Some((Token::Comma, _)) => {}
+                        Some((Token::Semicolon, _)) => break,
+                        Some((token, range)) => Err(ParseError::UnexpectedToken { token, range })?,
+                        None => Err(ParseError::ExpectedFoundNone)?,
+                    }  
                 }
             }
         }

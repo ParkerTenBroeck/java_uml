@@ -8,6 +8,7 @@ import visitors.Visitor;
 import java.util.LinkedList;
 
 public class Main {
+
     public static void main(String[] args) {
 
 
@@ -154,5 +155,17 @@ public class Main {
             child = child.getNextSibling();
         }
         visitor.up();
+    }
+
+    public enum BRUH{
+        V1
+    }
+    public enum BRUH2{
+        V1,
+    }
+    public enum BRUH3{
+        V1;
+    }
+    public enum BRUH4{
     }
 }
