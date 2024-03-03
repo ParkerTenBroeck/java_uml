@@ -210,7 +210,7 @@ impl<'a> TypeResolve<'a> {
                             }
                             super::ast::generics::GenericInvoctionPart::Wildcard(wildcard) => {
                                 match wildcard {
-                                    super::ast::generics::WildcardBound::None => todo!(),
+                                    super::ast::generics::WildcardBound::None => {},
                                     super::ast::generics::WildcardBound::Extends(list)
                                     | super::ast::generics::WildcardBound::Super(list) => {
                                         for jtype in list {

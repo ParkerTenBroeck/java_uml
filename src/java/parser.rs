@@ -7,7 +7,12 @@ use crate::java::ast::{
 
 use super::{
     ast::{
-        class::{Class, ClassType}, functions::{Function, FunctionKind, Parameter}, generics::{GenericDefinition, GenericDefinitionPart, GenericInvoctionPart, WildcardBound}, types::JType, variable::Variable, Annotations, Import, Imports, JPath, Metadata, Modifiers, Visibility
+        class::{Class, ClassType},
+        functions::{Function, FunctionKind, Parameter},
+        generics::{GenericDefinition, GenericDefinitionPart, GenericInvoctionPart, WildcardBound},
+        types::JType,
+        variable::Variable,
+        Annotations, Import, Imports, JPath, Metadata, Modifiers, Visibility,
     },
     tokenizer::{Peek2, Peek2able, Token, Tokenizer},
 };
@@ -297,10 +302,10 @@ impl<'a> Parser<'a> {
             None => Err(ParseError::ExpectedFoundNone)?,
         };
 
-        match class_type{
-            ClassType::Interface
-            | ClassType::Record
-            | ClassType::Enum(_) => modifiers.set_m_static(true),
+        match class_type {
+            ClassType::Interface | ClassType::Record | ClassType::Enum(_) => {
+                modifiers.set_m_static(true)
+            }
             _ => {}
         }
 
@@ -313,9 +318,9 @@ impl<'a> Parser<'a> {
         let class_path = class_path_prefix;
 
         let generics = self.parse_generic_definition()?;
-        if let Some(generics) = &generics{
-            let mut more_generic_names = generic_names.map(|v|(*v).clone()).unwrap_or_default();
-            for generic in &generics.definitions{
+        if let Some(generics) = &generics {
+            let mut more_generic_names = generic_names.map(|v| (*v).clone()).unwrap_or_default();
+            for generic in &generics.definitions {
                 more_generic_names.insert(generic.name.clone());
             }
             generic_names = Some(Arc::new(more_generic_names));
@@ -374,14 +379,14 @@ impl<'a> Parser<'a> {
                     Some((token, range)) => Err(ParseError::UnexpectedToken { token, range })?,
                     None => Err(ParseError::ExpectedFoundNone)?,
                 }
-                
+
                 if !matches!(self.tokenizer.peek(), Some((Token::RBrace, _))) {
                     match self.tokenizer.next() {
                         Some((Token::Comma, _)) => {}
                         Some((Token::Semicolon, _)) => break,
                         Some((token, range)) => Err(ParseError::UnexpectedToken { token, range })?,
                         None => Err(ParseError::ExpectedFoundNone)?,
-                    }  
+                    }
                 }
             }
         }
@@ -409,7 +414,11 @@ impl<'a> Parser<'a> {
                     let mut class = self.parse_class(
                         package.clone(),
                         class_path.clone(),
-                        if modifiers.m_static() {None} else {generic_names.clone()},
+                        if modifiers.m_static() {
+                            None
+                        } else {
+                            generic_names.clone()
+                        },
                         imports.clone(),
                         meta,
                         annotations,
@@ -444,6 +453,7 @@ impl<'a> Parser<'a> {
                             kind,
                             name,
                             parameters: Vec::new(),
+                            throws: self.parse_function_throws()?,
                         }),
                         Some((Token::LPar, _)) => functions.push(Function {
                             meta,
@@ -454,6 +464,7 @@ impl<'a> Parser<'a> {
                             kind,
                             name,
                             parameters: self.parse_function_parameters()?,
+                            throws: self.parse_function_throws()?,
                         }),
                         Some(_) => {
                             if generics.is_some() {
@@ -813,5 +824,14 @@ impl<'a> Parser<'a> {
         } {}
 
         Ok(list)
+    }
+    
+    fn parse_function_throws(&mut self) -> Result<Option<Vec<JType>>, ParseError<'a>> {
+        if let Some((Token::Throws, _)) = self.tokenizer.peek(){
+            self.tokenizer.next();
+            Ok(Some(self.parse_type_comma_list()?))
+        }else{
+            Ok(None)
+        }
     }
 }

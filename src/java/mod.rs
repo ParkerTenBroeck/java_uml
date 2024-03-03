@@ -1,8 +1,8 @@
 pub mod ast;
+pub mod code_gen;
 pub mod parser;
 pub mod project;
 pub mod tokenizer;
-pub mod code_gen;
 
 #[test]
 fn test() {
@@ -130,12 +130,9 @@ fn test() {
     }
 }
 
-
 pub fn test_project() {
     let mut files = project::Files::new();
-    files
-        .load_dir("./test_java/p1")
-        .unwrap();
+    files.load_dir("./test_java/p1").unwrap();
 
     let mut project = project::Project::parse_all(&files).unwrap();
 

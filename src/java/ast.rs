@@ -123,20 +123,20 @@ impl std::fmt::Debug for Modifiers {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Metadata<'a>{
+pub struct Metadata<'a> {
     pub hidden: bool,
-    pub other: Vec<UmlMeta<'a>>
+    pub other: Vec<UmlMeta<'a>>,
 }
 
-impl<'a> Metadata<'a>{
-    pub fn new() -> Self{
+impl<'a> Metadata<'a> {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn push(&mut self, meta: UmlMeta<'a>){
-        match meta{
+    pub fn push(&mut self, meta: UmlMeta<'a>) {
+        match meta {
             UmlMeta::Hide => self.hidden = true,
-            other => self.push(other),
+            other => self.other.push(other),
         }
     }
 }
@@ -184,10 +184,14 @@ impl Annotations {
 }
 
 pub mod class {
-    use std::{collections::HashSet, sync::{Arc, Mutex}};
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    };
 
     use super::{
-        functions::Function, generics::GenericDefinition, types::JType, variable::Variable, Annotations, Imports, JPath, Metadata, Modifiers, Visibility
+        functions::Function, generics::GenericDefinition, types::JType, variable::Variable,
+        Annotations, Imports, JPath, Metadata, Modifiers, Visibility,
     };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -238,7 +242,9 @@ pub mod variable {
 
 pub mod functions {
 
-    use super::{generics::GenericDefinition, types::JType, Annotations, Metadata, Modifiers, Visibility};
+    use super::{
+        generics::GenericDefinition, types::JType, Annotations, Metadata, Modifiers, Visibility,
+    };
 
     #[derive(Debug, Clone)]
     pub enum FunctionKind {
@@ -257,6 +263,7 @@ pub mod functions {
         pub kind: FunctionKind,
         pub name: &'a str,
         pub parameters: Vec<Parameter>,
+        pub throws: Option<Vec<JType>>
     }
 
     #[derive(Debug, Clone)]
@@ -285,7 +292,7 @@ pub mod types {
     }
 
     #[derive(Debug, Clone)]
-    pub enum TypeResolution{
+    pub enum TypeResolution {
         None,
         Some(JPath),
         Generic,
