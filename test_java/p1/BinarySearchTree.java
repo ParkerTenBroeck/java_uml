@@ -37,7 +37,7 @@ public class BinarySearchTree {
         size ++;
     }
 
-    private static void insert(Node node, int val){
+    private static void insert(final Node node, int val){
 
     }
 

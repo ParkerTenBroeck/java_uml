@@ -34,25 +34,45 @@ pub enum ParseErrorKind<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParseError<'a>{
+pub struct ParseError<'a> {
     pub kind: ParseErrorKind<'a>,
-    pub range: Option<Range<usize>>
+    pub range: Option<Range<usize>>,
 }
 
-fn unexpected_token<'a, T>(message: &'static str, got: Token<'a>, range: Range<usize>) -> Result<T, ParseError<'a>>{
-    Err(ParseError { kind: ParseErrorKind::UnexpectedToken { message, got }, range: Some(range) })
+fn unexpected_token<'a, T>(
+    message: &'static str,
+    got: Token<'a>,
+    range: Range<usize>,
+) -> Result<T, ParseError<'a>> {
+    Err(ParseError {
+        kind: ParseErrorKind::UnexpectedToken { message, got },
+        range: Some(range),
+    })
 }
 
-fn expected_token<'a, T>(expected: &'static str, got: Token<'a>, range: Range<usize>) -> Result<T, ParseError<'a>>{
-    Err(ParseError { kind: ParseErrorKind::ExpectedToken { expected, got }, range: Some(range) })
+fn expected_token<'a, T>(
+    expected: &'static str,
+    got: Token<'a>,
+    range: Range<usize>,
+) -> Result<T, ParseError<'a>> {
+    Err(ParseError {
+        kind: ParseErrorKind::ExpectedToken { expected, got },
+        range: Some(range),
+    })
 }
 
-fn expected_token_eof<'a, T>(expected: &'static str) -> Result<T, ParseError<'a>>{
-    Err(ParseError { kind: ParseErrorKind::ExpectedTokenFoundNone { expected }, range: None })
+fn expected_token_eof<'a, T>(expected: &'static str) -> Result<T, ParseError<'a>> {
+    Err(ParseError {
+        kind: ParseErrorKind::ExpectedTokenFoundNone { expected },
+        range: None,
+    })
 }
 
-fn array_degree_too_big<'a>(range: Range<usize>) -> ParseError<'a>{
-    ParseError{ kind: ParseErrorKind::ArrayDegreeTooBig, range: Some(range) }
+fn array_degree_too_big<'a>(range: Range<usize>) -> ParseError<'a> {
+    ParseError {
+        kind: ParseErrorKind::ArrayDegreeTooBig,
+        range: Some(range),
+    }
 }
 
 pub struct Parser<'a> {
@@ -181,6 +201,7 @@ impl<'a> Parser<'a> {
                 Some((Token::Annotation(annotation), _)) => {
                     annotations.annotations.push((*annotation).into());
                     self.tokenizer.next();
+                    self.match_parens()?;
                 }
                 Some((Token::UmlMeta(_), _)) => {
                     if let Some((Token::UmlMeta(meta), _)) = self.tokenizer.next() {
@@ -195,6 +216,33 @@ impl<'a> Parser<'a> {
         let modifiers = self.parse_modifiers();
 
         Ok((metas, annotations, visibility, modifiers))
+    }
+
+    pub fn parse_meta_ann_mod(
+        &mut self,
+    ) -> Result<(Metadata<'a>, Annotations, Modifiers), ParseError<'a>> {
+        let mut annotations = Annotations::new();
+        let mut metas = Metadata::new();
+
+        loop {
+            match self.tokenizer.peek() {
+                Some((Token::Annotation(annotation), _)) => {
+                    annotations.annotations.push((*annotation).into());
+                    self.tokenizer.next();
+                    self.match_parens()?;
+                }
+                Some((Token::UmlMeta(_), _)) => {
+                    if let Some((Token::UmlMeta(meta), _)) = self.tokenizer.next() {
+                        metas.push(meta);
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        let modifiers = self.parse_modifiers();
+
+        Ok((metas, annotations, modifiers))
     }
 
     pub fn parse_modifiers(&mut self) -> Modifiers {
@@ -311,16 +359,26 @@ impl<'a> Parser<'a> {
         let mut class_type = match self.tokenizer.next() {
             Some((Token::Class, _)) => ClassType::Class,
             Some((Token::Interface, _)) => ClassType::Interface,
+            Some((Token::Annotation("interface"), _)) => ClassType::InterfaceA,
             Some((Token::Record, _)) => ClassType::Record,
             Some((Token::Enum, _)) => ClassType::Enum(Vec::new()),
-            Some((got, range)) => return expected_token("Class|Interface|Record|Enum", got, range),
-            None => return expected_token_eof("Class|Interface|Record|Enum"),
+            Some((got, range)) => {
+                return expected_token(
+                    "Class|Interface|Record|EnumAnnotation(\"interface\")",
+                    got,
+                    range,
+                )
+            }
+            None => {
+                return expected_token_eof("Class|Interface|Record|Enum|Annotation(\"interface\")")
+            }
         };
 
         match class_type {
-            ClassType::Interface | ClassType::Record | ClassType::Enum(_) => {
-                modifiers.set_m_static(true)
-            }
+            ClassType::Interface
+            | ClassType::InterfaceA
+            | ClassType::Record
+            | ClassType::Enum(_) => modifiers.set_m_static(true),
             _ => {}
         }
 
@@ -391,7 +449,9 @@ impl<'a> Parser<'a> {
                     Some((Token::Semicolon, _)) => break,
                     Some((Token::RBrace, _)) => break,
 
-                    Some((got, range)) => return expected_token("Ident|Semicolon|RBrace", got, range),
+                    Some((got, range)) => {
+                        return expected_token("Ident|Semicolon|RBrace", got, range)
+                    }
                     None => return expected_token_eof("Ident|Semicolon|RBrace"),
                 }
 
@@ -425,7 +485,14 @@ impl<'a> Parser<'a> {
             let (meta, annotations, visibility, modifiers) = self.parse_stuff()?;
 
             match self.tokenizer.peek().cloned() {
-                Some((Token::Class | Token::Interface | Token::Enum | Token::Record, _)) => {
+                Some((
+                    Token::Class
+                    | Token::Interface
+                    | Token::Enum
+                    | Token::Record
+                    | Token::Annotation("interface"),
+                    _,
+                )) => {
                     let mut class = self.parse_class(
                         package.clone(),
                         class_path.clone(),
@@ -483,43 +550,102 @@ impl<'a> Parser<'a> {
                         }),
                         Some(_) => {
                             if generics.is_some() {
-                                return unexpected_token("Cannot gave generic definition on variable", Token::LAngle, start.1.clone());
+                                return unexpected_token(
+                                    "Cannot gave generic definition on variable",
+                                    Token::LAngle,
+                                    start.1.clone(),
+                                );
                             }
                             let jtype = if let FunctionKind::Regular(jtype) = kind {
                                 jtype
                             } else {
-                                return unexpected_token("Expected type for variable declaration", start.0, start.1.clone());
+                                return unexpected_token(
+                                    "Expected type for variable declaration",
+                                    start.0,
+                                    start.1.clone(),
+                                );
                             };
 
-                            let jtype = self.append_c_style_arr(jtype)?;
+                            let mut name = name;
 
-                            match self.tokenizer.peek(){
-                                Some((Token::Semicolon, _)) => _ = self.tokenizer.next(),
-                                Some((Token::Equals, _)) => {
-                                    self.tokenizer.next();
-                                    match self.tokenizer.next() {
-                                        Some((Token::Semicolon, _)) => break,
-                                        Some(_) => {}
-                                        None => return expected_token_eof("Semicolon"),
+                            loop {
+                                let jtype = self.append_c_style_arr(jtype.clone())?;
+                                match self.tokenizer.peek() {
+                                    Some((Token::Semicolon, _)) => {
+                                        self.tokenizer.next();
+
+                                        variables.push(Variable {
+                                            meta,
+                                            annotations,
+                                            visibility,
+                                            modifiers,
+                                            jtype,
+                                            name,
+                                        });
+                                        break;
                                     }
-                                },
-                                Some((got, range)) => return expected_token("Semicolon|Equals", *got, range.clone()),
-                                None => return expected_token_eof("Semicolon|Equals"),
+                                    Some((Token::Equals, _)) => {
+                                        loop {
+                                            match self.tokenizer.next() {
+                                                Some((Token::Semicolon, _)) => break,
+                                                Some(_) => {}
+                                                None => return expected_token_eof("Semicolon"),
+                                            }
+                                        }
+
+                                        variables.push(Variable {
+                                            meta,
+                                            annotations,
+                                            visibility,
+                                            modifiers,
+                                            jtype,
+                                            name,
+                                        });
+                                        break;
+                                    }
+                                    Some((Token::Comma, _)) => {
+                                        variables.push(Variable {
+                                            meta: meta.clone(),
+                                            annotations: annotations.clone(),
+                                            visibility,
+                                            modifiers,
+                                            jtype,
+                                            name,
+                                        });
+
+                                        self.tokenizer.next();
+                                        match self.tokenizer.next() {
+                                            Some((Token::Ident(ident), _)) => name = ident,
+                                            Some(_) => {}
+                                            None => return expected_token_eof("Ident"),
+                                        }
+                                    }
+                                    Some((got, range)) => {
+                                        return expected_token(
+                                            "Semicolon|Equals",
+                                            *got,
+                                            range.clone(),
+                                        )
+                                    }
+                                    None => return expected_token_eof("Semicolon|Equals"),
+                                }
                             }
-                            variables.push(Variable {
-                                meta,
-                                annotations,
-                                visibility,
-                                modifiers,
-                                jtype,
-                                name,
-                            })
                         }
                         None => return expected_token_eof("No matching brace found at EOF"),
                     };
                 }
-                Some((got, range)) => return expected_token("Class|Interface|Record|Enum|LAngle|Ident", got, range),
-                None => return expected_token_eof("Class|Interface|Record|Enum|LAngle|Ident"),
+                Some((got, range)) => {
+                    return expected_token(
+                        "Class|Interface|Record|Enum|Annotation(\"interface\")|LAngle|Ident",
+                        got,
+                        range,
+                    )
+                }
+                None => {
+                    return expected_token_eof(
+                        "Class|Interface|Record|Enum|Annotation(\"interface\")|LAngle|Ident",
+                    )
+                }
             }
 
             self.remove_empty()?;
@@ -612,7 +738,7 @@ impl<'a> Parser<'a> {
         Ok(variables)
     }
 
-    pub fn parse_function_parameters(&mut self) -> Result<Vec<Parameter>, ParseError<'a>> {
+    pub fn parse_function_parameters(&mut self) -> Result<Vec<Parameter<'a>>, ParseError<'a>> {
         match self.tokenizer.next() {
             Some((Token::LPar, _)) => {}
             Some((got, range)) => return expected_token("LPar", got, range),
@@ -643,11 +769,20 @@ impl<'a> Parser<'a> {
         Ok(parameters)
     }
 
-    pub fn parse_function_parameter(&mut self) -> Result<Parameter, ParseError<'a>> {
+    pub fn parse_function_parameter(&mut self) -> Result<Parameter<'a>, ParseError<'a>> {
+        let (meta, annotations, modifiers) = self.parse_meta_ann_mod()?;
+
         let jtype = self.parse_type()?;
         match self.tokenizer.next() {
-            Some((Token::Ident(ident), _)) => {
-                return Ok(Parameter::Regular(jtype, ident.to_owned()))
+            Some((Token::Ident(name), _)) => {
+                return Ok(Parameter {
+                    meta,
+                    annotations,
+                    jtype: self.append_c_style_arr(jtype)?,
+                    name,
+                    vargs: false,
+                    modifiers,
+                })
             }
             Some((Token::DotDotDot, _)) => {}
             Some((got, range)) => return expected_token("Ident|DotDotDot", got, range),
@@ -655,9 +790,16 @@ impl<'a> Parser<'a> {
         }
 
         match self.tokenizer.next() {
-            Some((Token::Ident(ident), _)) => Ok(Parameter::VArgs(jtype, ident.to_owned())),
-            Some((got, range)) => return expected_token("Ident", got, range),
-            None => return expected_token_eof("Ident"),
+            Some((Token::Ident(name), _)) => Ok(Parameter {
+                meta,
+                annotations,
+                jtype: self.append_c_style_arr(jtype)?,
+                name,
+                vargs: true,
+                modifiers,
+            }),
+            Some((got, range)) => expected_token("Ident", got, range),
+            None => expected_token_eof("Ident"),
         }
     }
 
@@ -691,20 +833,11 @@ impl<'a> Parser<'a> {
             self.tokenizer.next();
         }
 
-        let mut arr_degree = 0u8;
-
-        while matches!(self.tokenizer.peek(), Some((Token::LBracket, _))) {
-            self.tokenizer.next();
-            match self.tokenizer.next() {
-                Some((Token::RBracket, range)) => arr_degree = arr_degree.checked_add(1).ok_or(array_degree_too_big(range))?,
-                Some((got, range)) => return expected_token("RBracket", got, range),
-                None => return expected_token_eof("RBracket"),
-            }
-        }
+        let arr_degree = self.get_arr_degree()?;
 
         Ok(match kind {
             Kind::Primitive(primitive) => {
-                if let Some(arr_degree) = NonZeroU8::new(arr_degree) {
+                if let Some(arr_degree) = arr_degree {
                     JType::PrimitiveArr(primitive, arr_degree)
                 } else {
                     JType::Primitive(primitive)
@@ -713,7 +846,7 @@ impl<'a> Parser<'a> {
             Kind::Object(type_path, generics) => JType::Object {
                 path: TypePath::new(type_path),
                 generics,
-                arr: NonZeroU8::new(arr_degree),
+                arr: arr_degree,
             },
         })
     }
@@ -843,18 +976,35 @@ impl<'a> Parser<'a> {
 
         Ok(list)
     }
-    
+
     fn parse_function_throws(&mut self) -> Result<Option<Vec<JType>>, ParseError<'a>> {
-        if let Some((Token::Throws, _)) = self.tokenizer.peek(){
+        if let Some((Token::Throws, _)) = self.tokenizer.peek() {
             self.tokenizer.next();
             Ok(Some(self.parse_type_comma_list()?))
-        }else{
+        } else {
             Ok(None)
         }
     }
-    
+
+    fn get_arr_degree(&mut self) -> Result<Option<NonZeroU8>, ParseError<'a>> {
+        let mut arr_degree = 0u8;
+        while matches!(self.tokenizer.peek(), Some((Token::LBracket, _))) {
+            self.tokenizer.next();
+            match self.tokenizer.next() {
+                Some((Token::RBracket, range)) => {
+                    arr_degree = arr_degree
+                        .checked_add(1)
+                        .ok_or(array_degree_too_big(range))?
+                }
+                Some((got, range)) => return expected_token("RBracket", got, range),
+                None => return expected_token_eof("RBracket"),
+            }
+        }
+        Ok(NonZeroU8::new(arr_degree))
+    }
+
     fn append_c_style_arr(&mut self, mut jtype: JType) -> Result<JType, ParseError<'a>> {
-        let mut arr_degree = match &jtype{
+        let mut arr_degree = match &jtype {
             JType::Primitive(_) => 0u8,
             JType::PrimitiveArr(_, arr) => arr.get(),
             JType::Object { arr, .. } => arr.map(NonZeroU8::get).unwrap_or(0),
@@ -863,22 +1013,31 @@ impl<'a> Parser<'a> {
         while matches!(self.tokenizer.peek(), Some((Token::LBracket, _))) {
             self.tokenizer.next();
             match self.tokenizer.next() {
-                Some((Token::RBracket, range)) => arr_degree = arr_degree.checked_add(1).ok_or(array_degree_too_big(range))?,
+                Some((Token::RBracket, range)) => {
+                    arr_degree = arr_degree
+                        .checked_add(1)
+                        .ok_or(array_degree_too_big(range))?
+                }
                 Some((got, range)) => return expected_token("RBracket", got, range),
                 None => return expected_token_eof("RBracket"),
             }
         }
 
-        match jtype{
-            JType::PrimitiveArr(prim, _) 
-            | JType::Primitive(prim) => {
-                if let Some(arr) = NonZeroU8::new(arr_degree){
+        match jtype {
+            JType::PrimitiveArr(prim, _) | JType::Primitive(prim) => {
+                if let Some(arr) = NonZeroU8::new(arr_degree) {
                     jtype = JType::PrimitiveArr(prim, arr)
-                }else{
+                } else {
                     jtype = JType::Primitive(prim)
                 }
-            },
-            JType::Object { path, generics, .. } => jtype = JType::Object { path, generics, arr: NonZeroU8::new(arr_degree) }
+            }
+            JType::Object { path, generics, .. } => {
+                jtype = JType::Object {
+                    path,
+                    generics,
+                    arr: NonZeroU8::new(arr_degree),
+                }
+            }
         }
         Ok(jtype)
     }

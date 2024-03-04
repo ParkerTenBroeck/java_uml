@@ -10,14 +10,14 @@ fn main() {
         .load_dir(std::env::args().nth(1).expect("Expected path to project"))
         .unwrap();
 
-    let mut project = match project::Project::parse_all(&files){
+    let mut project = match project::Project::parse_all(&files) {
         Ok(ok) => ok,
         Err(errs) => {
-            for err in errs{
+            for err in errs {
                 println!("{err}");
             }
             return;
-        },
+        }
     };
 
     project.resolve_imports();

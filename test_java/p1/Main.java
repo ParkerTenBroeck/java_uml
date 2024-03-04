@@ -9,9 +9,21 @@ import java.util.LinkedList;
 
 public class Main {
 
+    @interface Test{
+        
+    }
+
     int[] intArr;
     int[] intArr2[];
     int intArr3[][];
+
+    int test, value, multiple;
+    int t1est, v1alue, m1ultiple = 34;
+    int[] arr1, arr2[], arr3[][] = null;
+
+    public void bruhbruh(@Deprecated double[] v[]){
+
+    }
 
     public static void main(String... args) throws Exception {
 

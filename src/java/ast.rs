@@ -200,6 +200,7 @@ pub mod class {
         Interface,
         Record,
         Enum(Vec<String>),
+        InterfaceA,
     }
 
     #[derive(Debug, Clone)]
@@ -262,14 +263,18 @@ pub mod functions {
         pub generics: Option<GenericDefinition>,
         pub kind: FunctionKind,
         pub name: &'a str,
-        pub parameters: Vec<Parameter>,
-        pub throws: Option<Vec<JType>>
+        pub parameters: Vec<Parameter<'a>>,
+        pub throws: Option<Vec<JType>>,
     }
 
     #[derive(Debug, Clone)]
-    pub enum Parameter {
-        Regular(JType, String),
-        VArgs(JType, String),
+    pub struct Parameter<'a> {
+        pub jtype: JType,
+        pub vargs: bool,
+        pub modifiers: Modifiers,
+        pub name: &'a str,
+        pub meta: Metadata<'a>,
+        pub annotations: Annotations,
     }
 }
 

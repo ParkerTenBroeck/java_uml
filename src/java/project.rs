@@ -62,7 +62,7 @@ pub struct Project<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParseFileError<'a>{
+pub struct ParseFileError<'a> {
     pub path: &'a Path,
     pub contents: &'a str,
     pub error: ParseError<'a>,
@@ -75,28 +75,47 @@ const BLUE: &str = "\x1b[34m";
 // const GREEN: &str = "\x1b[32m";
 const RESET: &str = "\x1b[0;22m";
 
-
-
-impl<'a> std::fmt::Display for ParseFileError<'a>{
+impl<'a> std::fmt::Display for ParseFileError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}: ")?;
-        match self.error.kind{
-            parser::ParseErrorKind::UnexpectedToken { message, got } => writeln!(f, "unexpected token {got:?} {message}")?,
-            parser::ParseErrorKind::ExpectedToken { expected, got } =>  writeln!(f, "expected {expected} got {got:?}")?,
-            parser::ParseErrorKind::ExpectedTokenFoundNone { expected } => writeln!(f, "expected {expected} got EOF")?,
+        match self.error.kind {
+            parser::ParseErrorKind::UnexpectedToken { message, got } => {
+                writeln!(f, "unexpected token {got:?} {message}")?
+            }
+            parser::ParseErrorKind::ExpectedToken { expected, got } => {
+                writeln!(f, "expected {expected} got {got:?}")?
+            }
+            parser::ParseErrorKind::ExpectedTokenFoundNone { expected } => {
+                writeln!(f, "expected {expected} got EOF")?
+            }
             parser::ParseErrorKind::ArrayDegreeTooBig => writeln!(f, "array degree too big")?,
         }
 
-        let (line, col, line_contents, adj_range) = if let Some(range) = &self.error.range{
-            let line_start = self.contents[..range.start].rfind('\n').map(|v|v+1).unwrap_or(0);
-            let line_end = self.contents[range.end..].find('\n').map(|v|v+range.end-1).unwrap_or(self.contents.len());
+        let (line, col, line_contents, adj_range) = if let Some(range) = &self.error.range {
+            let line_start = self.contents[..range.start]
+                .rfind('\n')
+                .map(|v| v + 1)
+                .unwrap_or(0);
+            let line_end = self.contents[range.end..]
+                .find('\n')
+                .map(|v| v + range.end - 1)
+                .unwrap_or(self.contents.len());
             let col = range.start - line_start;
-            let lines = self.contents[..range.start].chars().filter(|v|*v=='\n').count()+1;
+            let lines = self.contents[..range.start]
+                .chars()
+                .filter(|v| *v == '\n')
+                .count()
+                + 1;
             let msg = &self.contents[line_start..=line_end];
-            (lines, col, msg, (range.start-line_start)..(range.start-line_start + range.end-range.start))
-        }else{
-            let lines = self.contents.chars().filter(|v|*v=='\n').count()+1;
-            let line_start = self.contents.rfind('\n').map(|v|v+1).unwrap_or(0);
+            (
+                lines,
+                col,
+                msg,
+                (range.start - line_start)..(range.start - line_start + range.end - range.start),
+            )
+        } else {
+            let lines = self.contents.chars().filter(|v| *v == '\n').count() + 1;
+            let line_start = self.contents.rfind('\n').map(|v| v + 1).unwrap_or(0);
             let col = self.contents.len() - line_start;
             let msg = &self.contents[line_start..];
             (lines, col, msg, 0..0)
@@ -104,7 +123,7 @@ impl<'a> std::fmt::Display for ParseFileError<'a>{
 
         // this is funny
         let space = "                                                                                                                                                                                                                                                                ";
-        
+
         let space = &space[0..((line as f32).log10().floor() as u8) as usize + 1];
 
         writeln!(
@@ -115,44 +134,34 @@ impl<'a> std::fmt::Display for ParseFileError<'a>{
             col
         )?;
         writeln!(f, "{BLUE}{BOLD}{space} |")?;
-        if self.error.range.is_some(){
+        if self.error.range.is_some() {
             let mut index = 0;
-            for (i, line_contents) in line_contents.split('\n').enumerate(){ 
-                writeln!(
-                    f,
-                    "{} |{RESET} {}",
-                    line + i,
-                    &line_contents
-                )?;
+            for (i, line_contents) in line_contents.split('\n').enumerate() {
+                writeln!(f, "{} |{RESET} {}", line + i, &line_contents)?;
                 write!(f, "{BLUE}{BOLD}{space} | ")?;
-                for c in line_contents.chars(){
-                    if adj_range.contains(&index){
+                for c in line_contents.chars() {
+                    if adj_range.contains(&index) {
                         write!(f, "~")?;
-                    }else{
+                    } else {
                         write!(f, " ")?;
                     }
                     index += c.len_utf8();
                 }
                 //nl
-                if adj_range.contains(&index){
+                if adj_range.contains(&index) {
                     write!(f, "~")?;
-                }else{
+                } else {
                     write!(f, " ")?;
                 }
                 index += 1;
                 writeln!(f)?;
             }
             write!(f, "{RESET}")
-        }else{
-            writeln!(
-                f,
-                "{} |{RESET} {}",
-                line,
-                &line_contents
-            )?;
-            
+        } else {
+            writeln!(f, "{} |{RESET} {}", line, &line_contents)?;
+
             write!(f, "{BLUE}{BOLD}{space} | ")?;
-            for _ in line_contents.chars(){
+            for _ in line_contents.chars() {
                 write!(f, " ")?;
             }
             writeln!(f, "~{RESET}")
@@ -165,6 +174,12 @@ impl<'a> Project<'a> {
         let mut myself = Self::default();
         let mut vec = Vec::new();
         for (path, contents) in &files.files {
+            if !matches!(
+                path.as_path().extension().map(|v| v.to_str()),
+                Some(Some("java"))
+            ) {
+                continue;
+            }
             let result = parser::Parser::new(contents).parse();
             match result {
                 Ok(class) => {
@@ -173,12 +188,16 @@ impl<'a> Project<'a> {
                         .insert(ClassPath(class.class_path.clone()), class.imports.clone());
                     myself.add_class(path, class)
                 }
-                Err(error) => vec.push(ParseFileError{path, contents, error}),
+                Err(error) => vec.push(ParseFileError {
+                    path,
+                    contents,
+                    error,
+                }),
             }
         }
-        if vec.is_empty(){
+        if vec.is_empty() {
             Ok(myself)
-        }else{
+        } else {
             Err(vec)
         }
     }
@@ -262,7 +281,6 @@ impl<'a> Project<'a> {
 
         let prelude = Imports::new();
         for class in type_map.values_mut() {
-
             let class_imports = class.imports.clone();
             let class_imports = class_imports.lock().unwrap();
             let resolver = TypeResolve {
@@ -274,7 +292,6 @@ impl<'a> Project<'a> {
             resolver.resolve_class(class);
         }
     }
-
 }
 
 struct TypeResolve<'a> {
@@ -294,7 +311,7 @@ impl<'a> TypeResolve<'a> {
                 jtype.resolved = TypeResolution::Some(resolved.path.clone());
             } else if let Some(resolved) = self.prelude.name_map.get(start) {
                 jtype.resolved = TypeResolution::Some(resolved.path.clone());
-            } else if self.generics.contains(&jtype.origional.path){
+            } else if self.generics.contains(&jtype.origional.path) {
                 jtype.resolved = TypeResolution::Generic;
             }
         }
@@ -314,7 +331,7 @@ impl<'a> TypeResolve<'a> {
                             }
                             super::ast::generics::GenericInvoctionPart::Wildcard(wildcard) => {
                                 match wildcard {
-                                    super::ast::generics::WildcardBound::None => {},
+                                    super::ast::generics::WildcardBound::None => {}
                                     super::ast::generics::WildcardBound::Extends(list)
                                     | super::ast::generics::WildcardBound::Super(list) => {
                                         for jtype in list {
@@ -359,16 +376,11 @@ impl<'a> TypeResolve<'a> {
                 }
             }
             for param in &mut functions.parameters {
-                match param {
-                    functions::Parameter::Regular(jtype, _)
-                    | functions::Parameter::VArgs(jtype, _) => {
-                        self.resolve_type(jtype);
-                    }
-                }
+                self.resolve_type(&mut param.jtype);
             }
 
-            if let Some(throws) = &mut functions.throws{
-                for throw in throws{
+            if let Some(throws) = &mut functions.throws {
+                for throw in throws {
                     self.resolve_type(throw);
                 }
             }
@@ -384,17 +396,15 @@ impl<'a> TypeResolve<'a> {
 
 // ----------------------- Visitor stuff
 
-impl<'a> Project<'a>{
-    pub fn visit<T: Visitor>(visitor: &mut T) -> Result<T::Ok, T::Err>{
+impl<'a> Project<'a> {
+    pub fn visit<T: Visitor>(visitor: &mut T) -> Result<T::Ok, T::Err> {
         visitor.visit_start()?;
-
-
 
         visitor.visit_end()
     }
 }
 
-pub trait Visitor{
+pub trait Visitor {
     type Ok;
     type Err;
 
@@ -406,12 +416,11 @@ pub trait Visitor{
     fn visit_pre_class_meta(&mut self) -> Result<(), Self::Err>;
 
     fn visit_class(&mut self, class: &Class) -> Result<(), Self::Err>;
-    
+
     fn visit_post_class_meta(&mut self) -> Result<(), Self::Err>;
     fn visit_package_end(&mut self, package: &JPath) -> Result<(), Self::Err>;
 
     fn visit_post_meta(&mut self) -> Result<(), Self::Err>;
 
     fn visit_end(&mut self) -> Result<Self::Ok, Self::Err>;
-
 }
