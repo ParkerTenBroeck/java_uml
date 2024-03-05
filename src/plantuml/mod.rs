@@ -7,7 +7,7 @@ use crate::java::{
         variable::Variable,
         JPath, Visibility,
     },
-    project::Project,
+    project::{ClassPath, Project},
 };
 
 type Result = std::io::Result<()>;
@@ -28,7 +28,7 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
         skinparam fixCircleLabelOverlapping true 
         skinparam nodesep 100
         skinparam ranksep 100
-        'skinparam linetype ortho
+        skinparam linetype ortho
         'skinparam linetype polyline
         ' !pragma layout elk      
         set separator ::\n\n"
@@ -57,7 +57,49 @@ impl<'a, T: std::io::Write> PlantUmlGen<'a, T> {
             }
         }
 
+        for class in self.java.type_map.values() {
+            if let Some(extends) = &class.extends{
+                for extends in extends{
+                    self.write_full_class_path(&class.class_path, &class.package)?;
+                    self.out.write_all(" --|> ".as_bytes())?;
+                    self.write_type_path(extends)?;
+                    self.out.write_all(" : extends\n".as_bytes())?;
+                }
+            }
+            if let Some(extends) = &class.implements{
+                for extends in extends{
+                    self.write_full_class_path(&class.class_path, &class.package)?;
+                    self.out.write_all(" ..|> ".as_bytes())?;
+                    self.write_type_path(extends)?;
+                    self.out.write_all(" : implements\n".as_bytes())?;
+                }
+            }
+        }
+
         self.out.write_all("@enduml".as_bytes())
+    }
+
+    fn write_type_path(&mut self, jtype: &JType) -> Result{
+
+        match jtype{
+            JType::Primitive(_) => Ok(()),
+            JType::PrimitiveArr(_, _) => Ok(()),
+            JType::Object { path, .. } => {
+                match &path.resolved{
+                    TypeResolution::None => {
+                        self.out.write_all(path.origional.last().as_bytes())
+                    }
+                    TypeResolution::Generic => Ok(()),
+                    TypeResolution::Some(resolved) => {
+                        if let Some(class) = self.java.type_map.get(resolved){
+                            self.write_full_class_path(&class.class_path, &class.package)
+                        }else{
+                            self.out.write_all(path.origional.last().as_bytes())
+                        }
+                    },
+                }
+            },
+        }
     }
 
     fn write_package_path(&mut self, package: &JPath) -> Result {

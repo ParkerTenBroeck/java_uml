@@ -41,15 +41,22 @@ impl Files {
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 pub struct PackagePath(pub JPath);
+impl Borrow<JPath> for PackagePath{
+    fn borrow(&self) -> &JPath {
+        &self.0
+    }
+}
 
+
+
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+pub struct ClassPath(pub JPath);
 impl Borrow<JPath> for ClassPath {
     fn borrow(&self) -> &JPath {
         &self.0
     }
 }
 
-#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
-pub struct ClassPath(pub JPath);
 
 #[derive(Debug, Default)]
 pub struct Project<'a> {
